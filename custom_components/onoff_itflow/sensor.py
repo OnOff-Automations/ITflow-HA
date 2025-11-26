@@ -1806,7 +1806,12 @@ class ITFlowContactsSensor(SensorEntity, RestoreEntity):
 
             response = await client.get_contacts()
             if response.get("success"):
-                self._contacts = response.get("data", [])
+                # Filter out contacts with name "*****"
+                all_contacts = response.get("data", [])
+                self._contacts = [
+                    contact for contact in all_contacts
+                    if contact.get("contact_name") != "*****"
+                ]
                 self._attr_native_value = len(self._contacts)
             else:
                 _LOGGER.error("Failed to fetch contacts: %s", response.get("message"))
