@@ -216,7 +216,17 @@ class ITFlowClient:
         contact_name: str,
         contact_email: str | None = None,
         contact_phone: str | None = None,
-        contact_notes: str | None = None
+        contact_notes: str | None = None,
+        contact_title: str | None = None,
+        contact_department: str | None = None,
+        contact_extension: str | None = None,
+        contact_mobile: str | None = None,
+        contact_auth_method: str = "local",
+        contact_primary: int = 0,
+        contact_important: int = 0,
+        contact_billing: int = 0,
+        contact_technical: int = 0,
+        contact_location_id: int = 0
     ) -> dict[str, Any]:
         """Create a contact in ITFlow.
 
@@ -225,23 +235,59 @@ class ITFlowClient:
             contact_email: Email address
             contact_phone: Phone number
             contact_notes: Additional notes
+            contact_title: Job title
+            contact_department: Department
+            contact_extension: Phone extension
+            contact_mobile: Mobile phone
+            contact_auth_method: Authentication method (default: "local")
+            contact_primary: Primary contact flag (0 or 1)
+            contact_important: Important contact flag (0 or 1)
+            contact_billing: Billing contact flag (0 or 1)
+            contact_technical: Technical contact flag (0 or 1)
+            contact_location_id: Location ID (0 for no location)
 
         Returns:
             API response
         """
+        # Match Python example EXACTLY - use contact_* prefix for all fields
+        # Use default email if not provided
+        if not contact_email:
+            contact_email = "api@homeassistant.local"
+
+        # Build data matching Python example format EXACTLY
         data = {
-            "client_id": self.client_id,
+            "api_key": self.api_key,
             "contact_name": contact_name,
+            "contact_title": contact_title if contact_title else "",
+            "contact_department": contact_department if contact_department else "",
+            "contact_email": contact_email,
+            "contact_phone": contact_phone if contact_phone else "",
+            "contact_extension": contact_extension if contact_extension else "",
+            "contact_mobile": contact_mobile if contact_mobile else "",
+            "contact_notes": contact_notes if contact_notes else "",
+            "contact_auth_method": contact_auth_method,
+            "contact_primary": str(contact_primary),
+            "contact_important": str(contact_important),
+            "contact_billing": str(contact_billing),
+            "contact_technical": str(contact_technical),
+            "contact_location_id": str(contact_location_id),
+            "client_id": str(self.client_id),
         }
 
-        if contact_email:
-            data["contact_email"] = contact_email
-        if contact_phone:
-            data["contact_phone"] = contact_phone
-        if contact_notes:
-            data["contact_notes"] = contact_notes
+        # Log the exact request for debugging
+        import json
+        _LOGGER.info("=== Creating Contact ===")
+        _LOGGER.info("Contact name: %s", contact_name)
+        _LOGGER.info("Client ID: %s", self.client_id)
+        _LOGGER.info("Full request payload:")
+        _LOGGER.info(json.dumps(data, indent=2))
 
-        return await self._request("/contacts/create.php", "POST", data)
+        result = await self._request("/contacts/create.php", "POST", data)
+
+        _LOGGER.info("ITFlow Response:")
+        _LOGGER.info(json.dumps(result, indent=2))
+
+        return result
 
     async def create_ticket(
         self,
@@ -273,7 +319,7 @@ class ITFlowClient:
         }
 
         if contact_id:
-            data["contact_id"] = contact_id
+            data["ticket_contact_id"] = contact_id
         if asset_id:
             data["asset_id"] = asset_id
         if category:
