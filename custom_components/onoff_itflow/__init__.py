@@ -247,35 +247,51 @@ async def setup_itflow(hass: HomeAssistant, entry: ConfigEntry):
         except Exception as err:
             _LOGGER.error("Failed to create/update ITFlow asset: %s", err, exc_info=True)
 
-        # Create or reuse contact
+        # Create or reuse contact (non-blocking - don't prevent integration from loading)
         stored_contact_id = entry.data.get("itflow_contact_id")
         if stored_contact_id:
             hass.data[DOMAIN][entry.entry_id]["itflow_contact_id"] = stored_contact_id
             _LOGGER.info("Reusing existing ITFlow contact ID: %s", stored_contact_id)
         else:
+            _LOGGER.info("No stored contact ID found, creating new 'HA API' contact...")
             try:
                 contact_response = await client.create_contact(
-                    contact_name="Home Assistant API",
-                    contact_notes="Automated contact for Home Assistant integration"
+                    contact_name="HA API"
                 )
-                if isinstance(contact_response, dict) and contact_response.get("success"):
-                    response_data = contact_response.get("data", {})
-                    if isinstance(response_data, list) and len(response_data) > 0:
-                        contact_id = response_data[0].get("contact_id") or response_data[0].get("insert_id")
-                    elif isinstance(response_data, dict):
-                        contact_id = response_data.get("contact_id") or response_data.get("insert_id")
-                    else:
-                        contact_id = None
+                _LOGGER.info("Contact creation response type: %s, content: %s", type(contact_response), contact_response)
 
-                    if contact_id:
-                        hass.data[DOMAIN][entry.entry_id]["itflow_contact_id"] = contact_id
-                        # Store contact ID
-                        new_data = dict(entry.data)
-                        new_data["itflow_contact_id"] = contact_id
-                        hass.config_entries.async_update_entry(entry, data=new_data)
-                        _LOGGER.info("Created ITFlow contact (ID: %s)", contact_id)
+                if isinstance(contact_response, dict):
+                    if contact_response.get("success") or contact_response.get("success") == "True" or contact_response.get("success") == True:
+                        response_data = contact_response.get("data", {})
+                        _LOGGER.info("Contact response data type: %s, content: %s", type(response_data), response_data)
+
+                        contact_id = None
+                        if isinstance(response_data, list) and len(response_data) > 0:
+                            contact_id = response_data[0].get("contact_id") or response_data[0].get("insert_id") or response_data[0].get("id")
+                        elif isinstance(response_data, dict):
+                            contact_id = response_data.get("contact_id") or response_data.get("insert_id") or response_data.get("id")
+                        elif isinstance(response_data, str):
+                            # Sometimes the ID is returned as a string
+                            try:
+                                contact_id = int(response_data)
+                            except (ValueError, TypeError):
+                                pass
+
+                        if contact_id:
+                            hass.data[DOMAIN][entry.entry_id]["itflow_contact_id"] = contact_id
+                            # Store contact ID
+                            new_data = dict(entry.data)
+                            new_data["itflow_contact_id"] = contact_id
+                            hass.config_entries.async_update_entry(entry, data=new_data)
+                            _LOGGER.info("✅ Created ITFlow contact 'HA API' (ID: %s)", contact_id)
+                        else:
+                            _LOGGER.warning("⚠️ Contact created but no ID returned. Integration will continue without default contact. Response: %s", contact_response)
+                    else:
+                        _LOGGER.warning("⚠️ Contact creation failed: %s. Integration will continue without default contact.", contact_response.get("message", "Unknown error"))
+                else:
+                    _LOGGER.warning("⚠️ Unexpected contact response. Integration will continue without default contact. Type: %s, content: %s", type(contact_response), contact_response)
             except Exception as err:
-                _LOGGER.error("Failed to create ITFlow contact: %s", err, exc_info=True)
+                _LOGGER.warning("⚠️ Failed to create ITFlow contact, but integration will continue: %s", err, exc_info=True)
 
         # Create or update domain if public URL is provided
         public_url = data.get(CONF_PUBLIC_URL)
@@ -1987,6 +2003,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry):
         priority = call.data.get("ticket_priority", "Low")
         email = call.data.get("email")
         phone = call.data.get("phone")
+        contact_id = call.data.get("contact_id")
 
         # Get logged-in user from context
         user_name = "Unknown User"
@@ -2049,11 +2066,15 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry):
                 details_with_info = details
 
         try:
+            # Use provided contact_id or default to the "HA API" contact
+            default_contact_id = hass.data[DOMAIN][entry.entry_id].get("itflow_contact_id")
+            final_contact_id = contact_id if contact_id is not None else default_contact_id
+
             response = await client.create_ticket(
                 subject=subject,
                 details=details_with_info,
                 priority=priority,
-                contact_id=hass.data[DOMAIN][entry.entry_id].get("itflow_contact_id"),
+                contact_id=final_contact_id,
                 asset_id=hass.data[DOMAIN][entry.entry_id].get("itflow_asset_id"),
                 category="HA API"
             )
@@ -2075,6 +2096,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry):
             vol.Optional("ticket_priority", default="Low"): vol.In(["Low", "Medium", "High"]),
             vol.Optional("email"): cv.string,
             vol.Optional("phone"): cv.string,
+            vol.Optional("contact_id"): cv.positive_int,
         })
     )
 
@@ -2805,6 +2827,46 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry):
         })
     )
 
+    async def handle_get_contacts(call: ServiceCall):
+        """Handle the get_contacts service call to retrieve all contacts."""
+        client = hass.data[DOMAIN][entry.entry_id]["itflow_client"]
+        if not client:
+            _LOGGER.error("ITFlow client not initialized")
+            return
+
+        try:
+            response = await client.get_contacts()
+
+            if response.get("success"):
+                all_contacts = response.get("data", [])
+                # Filter out contacts with name "*****"
+                contacts = [
+                    contact for contact in all_contacts
+                    if contact.get("contact_name") != "*****"
+                ]
+                _LOGGER.info("Retrieved %d contacts from ITFlow (excluding hidden contacts)", len(contacts))
+
+                # Log each contact for easy reference
+                for contact in contacts:
+                    contact_id = contact.get("contact_id")
+                    contact_name = contact.get("contact_name")
+                    contact_email = contact.get("contact_email", "N/A")
+                    _LOGGER.info("Contact: ID=%s, Name=%s, Email=%s", contact_id, contact_name, contact_email)
+
+                # Store in hass.data for access by automations
+                hass.data[DOMAIN][entry.entry_id]["contacts_list"] = contacts
+            else:
+                _LOGGER.error("Failed to retrieve contacts: %s", response.get("message"))
+        except Exception as err:
+            _LOGGER.error("Error retrieving contacts: %s", err, exc_info=True)
+
+    hass.services.async_register(
+        DOMAIN,
+        "get_contacts",
+        handle_get_contacts,
+        schema=vol.Schema({})
+    )
+
 
 
 
@@ -2825,6 +2887,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         active_entries = hass.data[DOMAIN].setdefault("active_entries", set())
         active_entries.discard(entry.entry_id)
-        if len(active_entries) == 0:
-            remove_hooks(hass)
     return unload_ok
