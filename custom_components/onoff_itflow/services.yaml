@@ -45,6 +45,15 @@ create_ticket:
       selector:
         text:
           type: tel
+    contact_id:
+      name: Contact ID
+      description: ITFlow contact ID to associate with this ticket (optional - defaults to 'HA API' contact). Use the 'get_contacts' service to see available contacts and their IDs.
+      required: false
+      example: "123"
+      selector:
+        number:
+          min: 1
+          mode: box
 
 create_asset:
   name: Create Asset
@@ -193,3 +202,8 @@ send_backup_check_report:
       default: false
       selector:
         boolean:
+
+get_contacts:
+  name: Get Contacts
+  description: Retrieve all contacts from ITFlow and display them in the logs. Use this to find contact IDs for creating tickets with specific contacts.
+  fields: {}
