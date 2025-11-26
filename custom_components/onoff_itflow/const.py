@@ -99,3 +99,16 @@ BACKUP_CHECK_DAILY: Final = "daily"
 BACKUP_CHECK_WEEKLY: Final = "weekly"
 BACKUP_CHECK_MONTHLY: Final = "monthly"
 BACKUP_CHECK_NEVER: Final = "never"
+
+# Scheduling Configuration
+CONF_HEALTH_REPORT_TIME: Final = "health_report_time"
+CONF_HEALTH_REPORT_DAY_OF_WEEK: Final = "health_report_day_of_week"
+CONF_HEALTH_REPORT_DAY_OF_MONTH: Final = "health_report_day_of_month"
+CONF_BACKUP_CHECK_TIME: Final = "backup_check_time"
+CONF_BACKUP_CHECK_DAY_OF_WEEK: Final = "backup_check_day_of_week"
+CONF_BACKUP_CHECK_DAY_OF_MONTH: Final = "backup_check_day_of_month"
+
+# Default scheduling values
+DEFAULT_REPORT_TIME: Final = "08:00:00"
+DEFAULT_DAY_OF_WEEK: Final = "monday"
+DEFAULT_DAY_OF_MONTH: Final = 1
